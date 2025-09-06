@@ -67,6 +67,10 @@ endfunction
 "     input: string,
 "     timeout: bool,
 "     background: bool,
+"     with_cb: bool,
+"     out_cb: function,
+"     err_cb: function,
+"     exit_cb: function
 "   }
 function! s:system(str, ...) abort
   " Process optional arguments at first
@@ -75,6 +79,8 @@ function! s:system(str, ...) abort
   let input = ''
   let use_vimproc = s:has_vimproc()
   let background = 0
+  let with_cb = 0
+  let job_settings = {}
   let args = []
   if a:0 ==# 1
     " {command} [, {dict}]
@@ -92,6 +98,18 @@ function! s:system(str, ...) abort
       endif
       if has_key(a:1, 'background')
         let background = a:1.background
+      endif
+      if has_key(a:1, 'with_cb')
+        let with_cb = 1
+      endif
+      if has_key(a:1, 'out_cb')
+        let job_settings.out_cb = a:1.out_cb
+      endif
+      if has_key(a:1, 'err_cb')
+        let job_settings.err_cb = a:1.err_cb
+      endif
+      if has_key(a:1, 'exit_cb')
+        let job_settings.exit_cb = a:1.exit_cb
       endif
     elseif type(a:1) is s:TYPE_STRING
       let args += [s:iconv(a:1, &encoding, 'char')]
@@ -116,17 +134,23 @@ function! s:system(str, ...) abort
     throw 'vital: Process: invalid argument (value type:' . type(a:str) . ')'
   endif
   let args = [command] + args
-  if background && (use_vimproc || !s:is_windows)
-    if has('nvim')
-      throw "vital: Process: neovim's system() doesn't support background(&) process (cmdline:" . string(a:str) . ')'
+  if with_cb
+    " TODO: support windows cmd.exe
+    call job_start([&shell, '-c'] + args, job_settings)
+    return
+  else
+    if background && (use_vimproc || !s:is_windows)
+      if has('nvim')
+        throw "vital: Process: neovim's system() doesn't support background(&) process (cmdline:" . string(a:str) . ')'
+      endif
+      let args[0] = args[0] . ' &'
     endif
-    let args[0] = args[0] . ' &'
+    let funcname = use_vimproc ? 'vimproc#system' : 'system'
+    let output = call(funcname, args)
+    let output = s:iconv(output, 'char', &encoding)
+    return output
   endif
 
-  let funcname = use_vimproc ? 'vimproc#system' : 'system'
-  let output = call(funcname, args)
-  let output = s:iconv(output, 'char', &encoding)
-  return output
 endfunction
 
 function! s:get_last_status() abort

@@ -94,19 +94,14 @@ function! s:encodeURIComponent(items) abort
   return ret
 endfunction
 
-function! s:request(...) abort
-  let settings = s:_build_settings(a:000)
+function! s:get_settings(args) abort
+  let settings = s:_build_settings(a:args)
   let settings.method = toupper(settings.method)
   if !has_key(settings, 'url')
     throw 'vital: Web.HTTP: "url" parameter is required.'
   endif
   if !s:Prelude.is_list(settings.client)
     let settings.client = [settings.client]
-  endif
-  let client = s:_get_client(settings)
-  if empty(client)
-    throw 'vital: Web.HTTP: Available client not found: '
-    \    . string(settings.client)
   endif
   if has_key(settings, 'contentType')
     let settings.headers['Content-Type'] = settings.contentType
@@ -126,6 +121,41 @@ function! s:request(...) abort
     let settings.headers['Content-Length'] = len(join(settings.data, "\n"))
   endif
   let settings._file = {}
+  return settings
+endfunction
+
+function! s:curl_inner_exit_cb(headerFile, bodyFile, on_done, job, code) abort
+  let headerText = readfile(a:headerFile)
+  let header = s:parseHeader(headerText)
+  let bodyText = readfile(a:bodyFile)
+  call a:on_done(header, bodyText)
+endfunction
+
+function! s:request_async(...) abort
+  let settings = s:get_settings(a:000)
+  let settings.client = ['curl']
+  let settings.async = 1
+  if !has_key(settings, 'out_cb')
+    let settings.out_cb = ""
+  endif
+  if !has_key(settings, 'err_cb')
+    let settings.err_cb = ""
+  endif
+  if !has_key(settings, 'exit_cb')
+    let settings.exit_cb = ""
+  endif
+  let client = s:_get_client(settings)
+  let responses = client.request(settings)
+endfunction
+
+function! s:request(...) abort
+  let settings = s:get_settings(a:000)
+  let settings.async = 0
+  let client = s:_get_client(settings)
+  if empty(client)
+    throw 'vital: Web.HTTP: Available client not found: '
+    \    . string(settings.client)
+  endif
 
   let responses = client.request(settings)
 
@@ -382,7 +412,7 @@ function! s:clients.curl._command(settings) abort
   return get(get(a:settings, 'command', {}), 'curl', 'curl')
 endfunction
 
-function! s:clients.curl.request(settings) abort
+function! s:clients.curl.command(settings) abort
   let quote = s:_quote()
   let command = self._command(a:settings)
   if has_key(a:settings, 'unixSocket')
@@ -437,31 +467,88 @@ function! s:clients.curl.request(settings) abort
   endif
   let command .= ' ' . quote . a:settings.url . quote
 
-  call s:Process.system(command)
-  let retcode = s:Process.get_last_status()
+  return command
+endfunction
 
-  let headerstr = s:_readfile(a:settings._file.header)
-  let header_chunks = split(headerstr, "\r\n\r\n")
-  let headers = map(header_chunks, 'split(v:val, "\r\n")')
-  if retcode != 0 && empty(headers)
-    if has_key(s:clients.curl.errcode, retcode)
-      throw 'vital: Web.HTTP: ' . s:clients.curl.errcode[retcode]
-    else
-      throw 'vital: Web.HTTP: Unknown error code has occurred in curl: code=' . retcode
+function! s:curl_out_cb(uer_cb_name, settings, job, msg) abort
+  call(a:user_cb_name, [a:job, a:msg])
+
+  call s:curl_cb_common(a:settings)
+endfunc
+
+function! s:curl_err_cb(user_cb_name, settings, job, code) abort
+  call(a:user_cb_name, [a:job, a:code])
+
+  call s:curl_cb_common(a:settings)
+endfunc
+
+function! s:curl_exit_cb(user_cb_name, settings, job, code) abort
+  echomsg "ExitCb kitayo!!!!!!!!!!!"
+
+  let headerText = readfile(a:settings._file.header)
+  let header = s:parseHeader(headerText)
+  let body = readfile(a:settings._file.content)
+
+  let UserCallback = function(a:user_cb_name, [a:job, a:code, header, body])
+  call call(UserCallback, [])
+
+  call s:curl_cb_common(a:settings)
+endfunc
+
+function! s:curl_cb_common(settings)
+
+  for file in values(a:settings._file)
+    if filereadable(file)
+      call delete(file)
     endif
-  endif
-  if !empty(headers)
-    let responses = map(headers, '[v:val, ""]')
+  endfor
+
+endfunction
+
+
+function! s:clients.curl.request(settings) abort
+  let command = s:clients.curl.command(a:settings)
+  if a:settings.async == 1
+    call s:Process.system(command, {
+          \ 'with_cb': 1,
+          \ 'err_cb': function('s:curl_out_cb',[a:settings.out_cb, a:settings]),
+          \ 'out_cb': function('s:curl_err_cb',[a:settings.err_cb, a:settings]),
+          \ 'exit_cb': function('s:curl_exit_cb',[a:settings.exit_cb, a:settings])})
   else
-    let responses = [[[], '']]
+    let has_output_file = has_key(a:settings, 'outputFile')
+    if has_output_file
+      let output_file = s:_file_resolve(a:settings.outputFile)
+    else
+      let output_file = s:_tempname()
+      let a:settings._file.content = output_file
+    endif
+
+    call s:Process.system(command)
+    let retcode = s:Process.get_last_status()
+
+    let headerstr = s:_readfile(a:settings._file.header)
+    let header_chunks = split(headerstr, "\r\n\r\n")
+    let headers = map(header_chunks, 'split(v:val, "\r\n")')
+    if retcode != 0 && empty(headers)
+      if has_key(s:clients.curl.errcode, retcode)
+        throw 'vital: Web.HTTP: ' . s:clients.curl.errcode[retcode]
+      else
+        throw 'vital: Web.HTTP: Unknown error code has occurred in curl: code=' . retcode
+      endif
+    endif
+    if !empty(headers)
+      let responses = map(headers, '[v:val, ""]')
+    else
+      let responses = [[[], '']]
+    endif
+    if has_output_file || a:settings.method ==? 'HEAD'
+      let content = ''
+    else
+      let content = s:_readfile(output_file)
+    endif
+    let responses[-1][1] = content
+    return responses
   endif
-  if has_output_file || a:settings.method ==? 'HEAD'
-    let content = ''
-  else
-    let content = s:_readfile(output_file)
-  endif
-  let responses[-1][1] = content
-  return responses
 endfunction
 
 let s:clients.wget = {}
@@ -629,3 +716,4 @@ let &cpo = s:save_cpo
 unlet s:save_cpo
 
 " vim:set et ts=2 sts=2 sw=2 tw=0:
+
