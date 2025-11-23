@@ -509,7 +509,7 @@ function! s:clients.curl.request(settings) abort
   let command = s:clients.curl.command(a:settings)
   if a:settings.async == 1
     call s:Process.system(command, {
-          \ 'with_cb': 1,
+          \ 'async': 1,
           \ 'err_cb': function('s:curl_out_cb',[a:settings.out_cb, a:settings]),
           \ 'out_cb': function('s:curl_err_cb',[a:settings.err_cb, a:settings]),
           \ 'exit_cb': function('s:curl_exit_cb',[a:settings.exit_cb, a:settings])})
