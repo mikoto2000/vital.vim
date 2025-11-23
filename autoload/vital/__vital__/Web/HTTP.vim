@@ -470,26 +470,25 @@ function! s:clients.curl.command(settings) abort
   return command
 endfunction
 
-function! s:curl_out_cb(uer_cb_name, settings, job, msg) abort
-  call(a:user_cb_name, [a:job, a:msg])
+function! s:curl_out_cb(user_cb, settings, job, msg) abort
+  call(a:user_cb, [a:job, a:msg])
 
   call s:curl_cb_common(a:settings)
 endfunc
 
-function! s:curl_err_cb(user_cb_name, settings, job, code) abort
-  call(a:user_cb_name, [a:job, a:code])
+function! s:curl_err_cb(user_cb, settings, job, code) abort
+  call(a:user_cb, [a:job, a:code])
 
   call s:curl_cb_common(a:settings)
 endfunc
 
-function! s:curl_exit_cb(user_cb_name, settings, job, code) abort
-  echomsg "ExitCb kitayo!!!!!!!!!!!"
+function! s:curl_exit_cb(user_cb, settings, job, code) abort
 
   let headerText = readfile(a:settings._file.header)
   let header = s:parseHeader(headerText)
   let body = readfile(a:settings._file.content)
 
-  let UserCallback = function(a:user_cb_name, [a:job, a:code, header, body])
+  let UserCallback = function(a:user_cb, [a:job, a:code, header, body])
   call call(UserCallback, [])
 
   call s:curl_cb_common(a:settings)
