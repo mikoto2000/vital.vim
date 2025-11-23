@@ -135,8 +135,14 @@ function! s:system(str, ...) abort
   endif
   let args = [command] + args
   if async
-    " TODO: support windows cmd.exe
-    call job_start([&shell, '-c'] + args, job_settings)
+    if has('win32')
+      " TODO: 動作確認
+      args = ['/C'] + args
+    else
+      args = ['-c'] + args
+    endif
+    " TODO: support nvim
+    call job_start([&shell] + args, job_settings)
     return
   else
     if background && (use_vimproc || !s:is_windows)
