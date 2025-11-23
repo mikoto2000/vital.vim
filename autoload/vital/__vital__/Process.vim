@@ -135,7 +135,7 @@ function! s:system(str, ...) abort
   endif
   let args = [command] + args
   if async
-    if has('win32')
+    if s:is_windows
       " TODO: 動作確認
       args = ['/C'] + args
     else
