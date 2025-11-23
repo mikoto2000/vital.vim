@@ -67,7 +67,7 @@ endfunction
 "     input: string,
 "     timeout: bool,
 "     background: bool,
-"     with_cb: bool,
+"     async: bool,
 "     out_cb: function,
 "     err_cb: function,
 "     exit_cb: function
@@ -79,7 +79,7 @@ function! s:system(str, ...) abort
   let input = ''
   let use_vimproc = s:has_vimproc()
   let background = 0
-  let with_cb = 0
+  let async = 0
   let job_settings = {}
   let args = []
   if a:0 ==# 1
@@ -99,8 +99,8 @@ function! s:system(str, ...) abort
       if has_key(a:1, 'background')
         let background = a:1.background
       endif
-      if has_key(a:1, 'with_cb')
-        let with_cb = 1
+      if has_key(a:1, 'async')
+        let async = 1
       endif
       if has_key(a:1, 'out_cb')
         let job_settings.out_cb = a:1.out_cb
@@ -134,7 +134,7 @@ function! s:system(str, ...) abort
     throw 'vital: Process: invalid argument (value type:' . type(a:str) . ')'
   endif
   let args = [command] + args
-  if with_cb
+  if async
     " TODO: support windows cmd.exe
     call job_start([&shell, '-c'] + args, job_settings)
     return

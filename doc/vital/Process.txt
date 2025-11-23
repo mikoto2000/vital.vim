@@ -74,6 +74,10 @@ system({command} [, {dict}])
 		input: string,
 		timeout: bool,
 		background: bool,
+		async: bool,
+		out_cb: function,
+		err_cb: function,
+		exit_cb: function
 	}
 
 get_last_status()			*Vital.Process.get_last_status()*
