@@ -437,7 +437,11 @@ function! s:clients.curl.request(settings) abort
   endif
   let command .= ' ' . quote . a:settings.url . quote
 
+  silent! execute '!curl --version'
+  silent! execute '!echo ' . command
+  silent! execute "!bash -c '" . command . "'"
   call s:Process.system(command)
+  silent! execute '!cat ' . output_file
   let retcode = s:Process.get_last_status()
 
   let headerstr = s:_readfile(a:settings._file.header)
